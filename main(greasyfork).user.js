@@ -4,17 +4,20 @@
 // @description  中文化 GitHub 界面的部分菜单及内容。原作者为楼教主(http://www.52cik.com/)。
 // @copyright    2021, 沙漠之子 (https://maboloshi.github.io/Blog)
 // @icon         https://github.githubassets.com/pinned-octocat.svg
-// @version      1.8.5
+// @version      1.9.2-2025-01-11
 // @author       沙漠之子
 // @license      GPL-3.0
 // @match        https://github.com/*
+// @match        https://skills.github.com/*
 // @match        https://gist.github.com/*
-// @require      https://greasyfork.org/scripts/435207-github-%E4%B8%AD%E6%96%87%E5%8C%96%E6%8F%92%E4%BB%B6-%E4%B8%AD%E6%96%87%E8%AF%8D%E5%BA%93%E8%A7%84%E5%88%99/code/GitHub%20%E4%B8%AD%E6%96%87%E5%8C%96%E6%8F%92%E4%BB%B6%20-%20%E4%B8%AD%E6%96%87%E8%AF%8D%E5%BA%93%E8%A7%84%E5%88%99.js?v1.8.5
+// @match        https://www.githubstatus.com/*
+// @require      https://greasyfork.org/scripts/435207-github-%E4%B8%AD%E6%96%87%E5%8C%96%E6%8F%92%E4%BB%B6-%E4%B8%AD%E6%96%87%E8%AF%8D%E5%BA%93%E8%A7%84%E5%88%99/code/GitHub%20%E4%B8%AD%E6%96%87%E5%8C%96%E6%8F%92%E4%BB%B6%20-%20%E4%B8%AD%E6%96%87%E8%AF%8D%E5%BA%93%E8%A7%84%E5%88%99.js?v1.9.2-2025-01-11
 // @run-at       document-end
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
 // @grant        GM_notification
 // @connect      www.iflyrec.com
 // @supportURL   https://github.com/maboloshi/github-chinese/issues
@@ -23,7 +26,7 @@
 (function (window, document, undefined) {
     'use strict';
 
-    const lang = 'zh'; // 设置默认语言
+    const lang = I18N.zh ? 'zh' : 'zh-CN'; // 设置默认语言
     let page;
     let enable_RegExp = GM_getValue("enable_RegExp", 1);
 
@@ -94,11 +97,11 @@
      */
     function traverseNode(node) {
         // 跳过忽略
-        if (I18N.conf.reIgnoreId.includes(node.id) ||
+        if (I18N.conf.reIgnoreId.test(node.id) ||
             I18N.conf.reIgnoreClass.test(node.className) ||
             I18N.conf.reIgnoreTag.includes(node.tagName) ||
             (node.getAttribute && I18N.conf.reIgnoreItemprop.test(node.getAttribute("itemprop")))
-           ) {
+        ) {
             return;
         }
 
@@ -127,7 +130,7 @@
                 } else {
                     transElement(node, 'placeholder');
                 }
-            } else if (node.tagName === 'BUTTON'){
+            } else if (node.tagName === 'BUTTON') {
                 if (node.hasAttribute('aria-label') && /tooltipped/.test(node.className)) {
                     transElement(node, 'aria-label', true); // 翻译 浏览器 提示对话框
                 }
@@ -147,7 +150,7 @@
                     transElement(node, 'cancel-confirm-text', true); // 取消按钮 提醒
                 }
                 if (node.hasAttribute('data-disable-with')) { // 按钮等待提示
-                    transElement(node.dataset, 'disableWith');
+                    transElement(node, 'data-disable-with', true);
                 }
             } else if (node.tagName === 'OPTGROUP') { // 翻译 <optgroup> 的 label 属性
                 transElement(node, 'label');
@@ -166,7 +169,7 @@
             childNodes.forEach(traverseNode); // 遍历子节点
 
         } else if (node.nodeType === Node.TEXT_NODE) { // 文本节点翻译
-            if (node.length <= 500){ // 修复 许可证编辑框初始化载入内容被翻译
+            if (node.length <= 500) { // 修复 许可证编辑框初始化载入内容被翻译
                 transElement(node, 'data');
             }
         }
@@ -179,16 +182,21 @@
     function getPage() {
 
         // 站点，如 gist, developer, help 等，默认主站是 github
-        const site = location.hostname === "gist.github.com" ? "gist" : "github"; // 站点
+        const siteMapping = {
+            'gist.github.com': 'gist',
+            'www.githubstatus.com': 'status',
+            'skills.github.com': 'skills'
+        };
+        const site = siteMapping[location.hostname] || 'github'; // 站点
         const pathname = location.pathname; // 当前路径
 
-         // 是否登录
+        // 是否登录
         const isLogin = document.body.classList.contains("logged-in");
 
         // 用于确定 个人首页，组织首页，仓库页 然后做判断
         const analyticsLocation = (document.getElementsByName('analytics-location')[0] || {}).content || '';
         // 组织页
-        const isOrganization = /\/<org-login>/.test(analyticsLocation)||/^\/(?:orgs|organizations)/.test(pathname);
+        const isOrganization = /\/<org-login>/.test(analyticsLocation) || /^\/(?:orgs|organizations)/.test(pathname);
         // 仓库页
         const isRepository = /\/<user-name>\/<repo-name>/.test(analyticsLocation);
 
@@ -207,20 +215,24 @@
             }
         } else if (site === 'gist') { // Gist 站点
             page = 'gist';
+        } else if (site === 'status') {  // GitHub Status 页面
+            page = 'status';
+        } else if (site === 'skills') {  // GitHub Skills 页面
+            page = 'skills';
         } else if (pathname === '/' && site === 'github') { // github.com 首页
             page = isLogin ? 'page-dashboard' : 'homepage';
-        } else if  (isRepository) { // 仓库页
+        } else if (isRepository) { // 仓库页
             t = pathname.match(I18N.conf.rePagePathRepo);
-            page = t ? 'repository/'+ t[1] : 'repository';
-        } else if  (isOrganization) { // 组织页
+            page = t ? 'repository/' + t[1] : 'repository';
+        } else if (isOrganization) { // 组织页
             t = pathname.match(I18N.conf.rePagePathOrg);
-            page = t ? 'orgs/'+ t[1] : 'orgs';
+            page = t ? 'orgs/' + (t[1] || t.slice(-1)[0]) : 'orgs';
         } else {
             t = pathname.match(I18N.conf.rePagePath);
-            page = t ? t[1] : false; // 取页面 key
+            page = t ? (t[1] || t.slice(-1)[0]) : false; // 取页面 key
         }
 
-        if (!page || !I18N[lang][page]){
+        if (!page || !I18N[lang][page]) {
             console.log(`请注意对应 page ${page} 词库节点不存在`);
             page = false;
         }
@@ -251,7 +263,7 @@
      */
     function transTimeElement(el) {
         let key = el.childNodes.length > 0 ? el.lastChild.textContent : el.textContent;
-        let res = I18N[lang]['pubilc']['time-regexp']; // 时间正则规则
+        let res = I18N[lang]['public']['time-regexp']; // 时间正则规则
 
         for (let [a, b] of res) {
             let str = key.replace(a, b);
@@ -285,7 +297,7 @@
      * @param {string} field - 需要翻译的文本内容或属性的名称。
      * @param {boolean} isAttr - 是否需要翻译属性。
      */
-    function transElement(el, field, isAttr=false) {
+    function transElement(el, field, isAttr = false) {
         let text = isAttr ? el.getAttribute(field) : el[field]; // 需要翻译的文本
         let str = translateText(text); // 翻译后的文本
 
@@ -331,15 +343,15 @@
     function fetchTranslatedText(key) {
 
         // 静态翻译
-        let str = I18N[lang][page]['static'][key] || I18N[lang]['pubilc']['static'][key]; // 默认翻译 公共部分
+        let str = I18N[lang][page]['static'][key] || I18N[lang]['public']['static'][key]; // 默认翻译 公共部分
 
         if (typeof str === 'string') {
             return str;
         }
 
         // 正则翻译
-        if (enable_RegExp){
-            let res = (I18N[lang][page].regexp || []).concat(I18N[lang]['pubilc'].regexp || []); // 正则数组
+        if (enable_RegExp) {
+            let res = (I18N[lang][page].regexp || []).concat(I18N[lang]['public'].regexp || []); // 正则数组
 
             for (let [a, b] of res) {
                 str = key.replace(a, b);
@@ -371,19 +383,19 @@
         let button = element.nextSibling;
 
         // 为翻译按钮添加点击事件
-       button.addEventListener('click', () => {
+        button.addEventListener('click', () => {
             // 获取元素的文本内容
             const desc = element.textContent.trim();
 
             // 如果文本内容为空，那么直接返回
-            if(!desc) {
+            if (!desc) {
                 return false;
             }
 
             // 调用 translateDescText 函数进行翻译
             translateDescText(desc, text => {
                 // 翻译完成后，隐藏翻译按钮，并在元素后面插入翻译结果
-                button.style.display="none";
+                button.style.display = "none";
                 const translationHTML = `<span style='font-size: small'>由 <a target='_blank' style='color:rgb(27, 149, 224);' href='https://www.iflyrec.com/html/translate.html'>讯飞听见</a> 翻译👇</span><br/>${text}`;
                 element.insertAdjacentHTML('afterend', translationHTML);
             });
@@ -401,7 +413,7 @@
             method: "POST", // 请求方法为 POST
             url: "https://www.iflyrec.com/TranslationService/v1/textTranslation", // 请求的 URL
             headers: { // 请求头
-                'Content-Type' : 'application/json',
+                'Content-Type': 'application/json',
                 'Origin': 'https://www.iflyrec.com',
             },
             data: JSON.stringify({
@@ -435,7 +447,7 @@
      */
     function transBySelector() {
         // 获取当前页面的翻译规则，如果没有找到，那么使用公共的翻译规则
-        let res = (I18N[lang][page]?.selector || []).concat(I18N[lang]['pubilc'].selector || []); // 数组
+        let res = (I18N[lang][page]?.selector || []).concat(I18N[lang]['public'].selector || []); // 数组
 
         // 如果找到了翻译规则
         if (res.length > 0) {
@@ -451,14 +463,20 @@
         }
     }
 
-    GM_registerMenuCommand("正则切换", () => {
-        enable_RegExp = enable_RegExp ? 0 : 1;
-        GM_setValue("enable_RegExp", enable_RegExp);
-        GM_notification(`已${enable_RegExp ? '开启' : '关闭'}正则功能`);
-        if (enable_RegExp) {
-            location.reload();
-        }
-    });
+    function registerMenuCommand() {
+        const toggleRegExp = () => {
+            enable_RegExp = !enable_RegExp;
+            GM_setValue("enable_RegExp", enable_RegExp);
+            GM_notification(`已${enable_RegExp ? '开启' : '关闭'}正则功能`);
+            if (enable_RegExp) {
+                location.reload();
+            }
+            GM_unregisterMenuCommand(id);
+            id = GM_registerMenuCommand(`${enable_RegExp ? '关闭' : '开启'}正则功能`, toggleRegExp);
+        };
+
+        let id = GM_registerMenuCommand(`${enable_RegExp ? '关闭' : '开启'}正则功能`, toggleRegExp);
+    }
 
     /**
      * init 函数：初始化翻译功能。
@@ -490,5 +508,7 @@
     }
 
     // 执行初始化
+    registerMenuCommand();
     init();
+
 })(window, document);
